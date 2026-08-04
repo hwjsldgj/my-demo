@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>围棋 AI 对弈</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', sans-serif;
+            text-align: center;
+            background: #f0f0f0;
+            margin: 20px;
+        }
+        #configPanel, #gamePanel {
+            display: inline-block;
+            background: #deb887;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.3);
+            margin: 10px;
+        }
+        #gamePanel { display: none; }
+        select, button {
+            margin: 5px;
+            padding: 6px 12px;
+            font-size: 16px;
+            border-radius: 4px;
+            border: 1px solid #888;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover { background: #45a049; }
+        button#resetBtn { background: #f44336; }
+        button#resetBtn:hover { background: #d32f2f; }
+        button#passBtn { background: #2196F3; }
+        button#passBtn:hover { background: #0b7dda; }
+        button#resignBtn { background: #ff9800; }
+        button#resignBtn:hover { background: #e68900; }
+        button#endBtn { background: #9c27b0; }
+        button#endBtn:hover { background: #7b1fa2; }
+        button#backBtn { background: #9e9e9e; }
+        button#backBtn:hover { background: #757575; }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            cursor: pointer;
+            background: #d9b382;
+            border-radius: 8px;
+            max-width: 100%;
+            height: auto;
+        }
+        #status { margin-top: 15px; font-size: 18px; font-weight: bold; color: #333; }
+        #info { margin-top: 10px; font-size: 14px; color: #555; }
+        #resultModal {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 999;
+        }
+        #resultBox {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 0 30px #000;
+        }
+        #resultBox h2 { margin-top: 0; }
+        #resultBox table { width: 100%; border-collapse: collapse; }
+        #resultBox td, #resultBox th { padding: 6px; border-bottom: 1px solid #ccc; }
+        #resultBox .close-btn { margin-top: 15px; }
+        select option:disabled { color: #aaa; }
+    </style>
+</head>
+<body>
+    <!-- 配置面板 -->
+    <div id="configPanel">
+        <h2>围棋 AI 对弈</h2>
+        <label>棋盘大小：</label>
+        <select id="boardSizeSelect">
+            <option value="9">9x9</option>
+            <option value="19">19x19</option>
+        </select><br>
+        <label>AI 难度：</label>
+        <select id="difficultySelect">
+            <option value="0">极简（规则）</option>
+            <option value="1">简单（贪心）</option>
+            <option value="2" selected>中等（2层搜索）</option>
+            <option value="3">困难（6层搜索）</option>
+            <option value="4">困难（MCTS 搜索）</option>
+        </select><br>
+        <button id="startBtn">开始对局</button>
+        <div id="configStatus" style="margin-top:10px;color:red;font-size:16px;"></div>
+    </div>
+
+    <!-- 游戏面板 -->
+    <div id="gamePanel">
+        <h2>围棋 AI 对弈</h2>
+        <div>你执黑 (X) · AI 执白 (O)</div>
+        <canvas id="boardCanvas"></canvas>
+        <div id="gameStatus" style="margin-top:15px;font-size:18px;font-weight:bold;color:#333;">等待开始...</div>
+        <div>
+            <button id="passBtn">弃权 (Pass)</button>
+            <button id="resignBtn">认输</button>
+            <button id="endBtn">结束对局（计点）</button>
+            <button id="resetBtn">重新开始（同配置）</button>
+            <button id="backBtn">返回配置</button>
+        </div>
+        <div id="info"></div>
+    </div>
+
+    <!-- 结果弹窗 -->
+    <div id="resultModal">
+        <div id="resultBox">
+            <h2>对局结束</h2>
+            <div id="resultContent"></div>
+            <button class="close-btn" onclick="closeResult()">关闭</button>
+            <button class="close-btn" onclick="closeResult(); resetGame();">重新开始</button>
+            <button class="close-btn" onclick="closeResult(); goBackToConfig();">返回配置</button>
+        </div>
+    </div>
+
+    <script>
+        const EMPTY = 0, BLACK = 1, WHITE = 2;
+
+        const configPanel = document.getElementById('configPanel');
+        const gamePanel = document.getElementById('gamePanel');
+        const startBtn = document.getElementById('startBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const passBtn = document.getElementById('passBtn');
+        const resignBtn = document.getElementById('resignBtn');
+        const endBtn = document.getElementById('endBtn');
+        const backBtn = document.getElementById('backBtn');
+        const canvas = document.getElementById('boardCanvas');
+        const ctx = canvas.getContext('2d');
+        const configStatus = document.getElementById('configStatus');
+        const gameStatus = document.getElementById('gameStatus');
+        const infoDiv = document.getElementById('info');
+        const resultModal = document.getElementById('resultModal');
+        const resultContent = document.getElementById('resultContent');
+
+        const boardSizeSelect = document.getElementById('boardSizeSelect');
+        const difficultySelect = document.getElementById('difficultySelect');
+
+        let BOARD_SIZE = 9;
+        const PADDING = 30;
+        let CELL_SIZE = 50;           // 动态调整
+        let board = [];
+        let myTurn = false;
+        let gameOver = false;
+        let currentTurn = BLACK;
+
+        // ---------- 自适应调整单元格大小 ----------
+        function adjustCellSize() {
+            const maxWidth = window.innerWidth * 0.85;
+            const maxHeight = window.innerHeight * 0.7;
+            const sizeByWidth = (maxWidth - PADDING * 2) / BOARD_SIZE;
+            const sizeByHeight = (maxHeight - PADDING * 2) / BOARD_SIZE;
+            let newSize = Math.min(sizeByWidth, sizeByHeight, 60);
+            if (newSize < 20) newSize = 20;
+            CELL_SIZE = newSize;
+        }
+
+        function resizeCanvas() {
+            canvas.width = BOARD_SIZE * CELL_SIZE + PADDING * 2;
+            canvas.height = BOARD_SIZE * CELL_SIZE + PADDING * 2;
+        }
+
+        function toPixel(r, c) {
+            return { x: PADDING + c * CELL_SIZE, y: PADDING + r * CELL_SIZE };
+        }
+
+        function createEmptyBoard(size) {
+            const b = [];
+            for (let r = 0; r < size; r++) {
+                b[r] = [];
+                for (let c = 0; c < size; c++) b[r][c] = EMPTY;
+            }
+            return b;
+        }
+
+        function drawBoard() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                const p1 = toPixel(i, 0);
+                const p2 = toPixel(i, BOARD_SIZE-1);
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.stroke();
+                const p3 = toPixel(0, i);
+                const p4 = toPixel(BOARD_SIZE-1, i);
+                ctx.beginPath();
+                ctx.moveTo(p3.x, p3.y);
+                ctx.lineTo(p4.x, p4.y);
+                ctx.stroke();
+            }
+            const starPoints = BOARD_SIZE === 9 ? [[4,4]] : [[3,3],[3,15],[15,3],[15,15],[3,9],[15,9],[9,3],[9,15],[9,9]];
+            ctx.fillStyle = '#000';
+            for (let [r,c] of starPoints) {
+                if (r < BOARD_SIZE && c < BOARD_SIZE) {
+                    const p = toPixel(r, c);
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 4, 0, 2*Math.PI);
+                    ctx.fill();
+                }
+            }
+            if (board && board.length > 0) {
+                for (let r=0; r<BOARD_SIZE; r++) {
+                    for (let c=0; c<BOARD_SIZE; c++) {
+                        if (board[r][c] === EMPTY) continue;
+                        const p = toPixel(r, c);
+                        const gradient = ctx.createRadialGradient(p.x-6, p.y-6, 4, p.x, p.y, CELL_SIZE/2-2);
+                        if (board[r][c] === BLACK) {
+                            gradient.addColorStop(0, '#666');
+                            gradient.addColorStop(1, '#000');
+                        } else {
+                            gradient.addColorStop(0, '#fff');
+                            gradient.addColorStop(1, '#ccc');
+                        }
+                        ctx.beginPath();
+                        ctx.arc(p.x, p.y, CELL_SIZE/2-3, 0, 2*Math.PI);
+                        ctx.fillStyle = gradient;
+                        ctx.fill();
+                        ctx.strokeStyle = '#333';
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+                    }
+                }
+            }
+        }
+
+        function updateGameStatus(msg) {
+            gameStatus.textContent = msg;
+        }
+
+        function showResult(score) {
+            if (!score) return;
+            const winner = score.winner === 'black' ? '黑方（你）' :
+                           score.winner === 'white' ? '白方（AI）' : '平局';
+            let html = `<p><strong>${winner} 获胜！</strong></p>`;
+            html += `<table><tr><th>项目</th><th>黑方</th><th>白方</th></tr>
+                     <tr><td>棋子数</td><td>${score.blackStones}</td><td>${score.whiteStones}</td></tr>
+                     <tr><td>领地（目）</td><td>${score.blackTerritory}</td><td>${score.whiteTerritory}</td></tr>
+                     <tr><td>总子数</td><td>${score.blackTotal}</td><td>${score.whiteTotal}</td></tr>`;
+            if (score.komi > 0) {
+                html += `<tr><td>贴子</td><td>-${score.komi}</td><td></td></tr>
+                         <tr><td>贴后</td><td>${score.blackFinal.toFixed(2)}</td><td></td></tr>`;
+            }
+            html += `</table>`;
+            resultContent.innerHTML = html;
+            resultModal.style.display = 'flex';
+        }
+
+        function closeResult() {
+            resultModal.style.display = 'none';
+        }
+
+        // ---------- 动态适配后端棋盘大小 ----------
+        async function fetchStatus() {
+            try {
+                const resp = await fetch('/status');
+                if (!resp.ok) {
+                    updateGameStatus('服务器状态获取失败 (HTTP ' + resp.status + ')');
+                    return;
+                }
+                const data = await resp.json();
+                if (data.board && Array.isArray(data.board)) {
+                    const actualSize = data.board.length;
+                    // 如果实际棋盘大小与当前 BOARD_SIZE 不一致，则动态调整
+                    if (actualSize !== BOARD_SIZE) {
+                        BOARD_SIZE = actualSize;
+                        adjustCellSize();
+                        resizeCanvas();
+                        board = createEmptyBoard(BOARD_SIZE);
+                    }
+                    // 将 data.board 复制到 board
+                    if (data.board.length === BOARD_SIZE) {
+                        board = data.board;
+                    } else {
+                        board = createEmptyBoard(BOARD_SIZE);
+                    }
+                } else {
+                    board = createEmptyBoard(BOARD_SIZE);
+                }
+                currentTurn = data.currentTurn;
+                gameOver = data.gameOver;
+                if (gameOver) {
+                    myTurn = false;
+                    updateGameStatus('对局结束');
+                    if (data.finalScore) {
+                        showResult(data.finalScore);
+                    }
+                } else {
+                    myTurn = (currentTurn === BLACK);
+                    updateGameStatus(myTurn ? '轮到你了' : 'AI 思考中...');
+                }
+                drawBoard();
+            } catch (e) {
+                console.error(e);
+                updateGameStatus('网络错误');
+            }
+        }
+
+        // ---------- 在 9x9 时禁用 MCTS ----------
+        function updateDifficultyOptions() {
+            const size = parseInt(boardSizeSelect.value);
+            const diffSelect = difficultySelect;
+            const options = diffSelect.options;
+            for (let i = 0; i < options.length; i++) {
+                if (options[i].value === '4') {
+                    if (size === 9) {
+                        options[i].disabled = true;
+                        if (diffSelect.value === '4') {
+                            diffSelect.value = '3';
+                        }
+                    } else {
+                        options[i].disabled = false;
+                    }
+                    break;
+                }
+            }
+        }
+
+        // 监听棋盘大小变化
+        boardSizeSelect.addEventListener('change', updateDifficultyOptions);
+
+        // ---------- 原有函数 ----------
+        async function sendMove(row, col) {
+            if (gameOver || !myTurn) return;
+            if (row<0 || row>=BOARD_SIZE || col<0 || col>=BOARD_SIZE) return;
+            if (board[row][col] !== EMPTY) {
+                updateGameStatus('此处已有棋子');
+                return;
+            }
+            myTurn = false;
+            updateGameStatus('提交走棋...');
+            try {
+                const resp = await fetch('/move', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ row, col })
+                });
+                if (!resp.ok) {
+                    updateGameStatus('服务器错误: ' + resp.status);
+                    myTurn = true;
+                    return;
+                }
+                const data = await resp.json();
+                if (data.error) {
+                    if (data.error === "ko") {
+                        updateGameStatus('劫争，禁止落子');
+                    } else if (data.error === "suicide") {
+                        updateGameStatus('自杀，禁止落子');
+                    } else {
+                        updateGameStatus('非法落子: ' + data.error);
+                    }
+                    myTurn = true;
+                    return;
+                }
+                if (data.board && Array.isArray(data.board) && data.board.length === BOARD_SIZE) {
+                    board = data.board;
+                }
+                if (data.gameOver) {
+                    gameOver = true;
+                    myTurn = false;
+                    drawBoard();
+                    if (data.finalScore) showResult(data.finalScore);
+                    return;
+                }
+                currentTurn = data.currentTurn;
+                drawBoard();
+                if (data.pass) {
+                    updateGameStatus('AI 无棋可下（Pass），轮到你了');
+                } else {
+                    const colLetter = String.fromCharCode(65 + (data.aiCol >= 8 && BOARD_SIZE===19 ? data.aiCol+1 : data.aiCol));
+                    updateGameStatus(`AI 落子 ${colLetter}${data.aiRow+1}，轮到你了`);
+                }
+                myTurn = true;
+            } catch (e) {
+                updateGameStatus('网络错误: ' + e.message);
+                myTurn = true;
+            }
+        }
+
+        async function doPass() {
+            if (gameOver || !myTurn) return;
+            myTurn = false;
+            updateGameStatus('你弃权...');
+            try {
+                const resp = await fetch('/pass', { method: 'POST' });
+                if (!resp.ok) {
+                    updateGameStatus('服务器错误: ' + resp.status);
+                    myTurn = true;
+                    return;
+                }
+                const data = await resp.json();
+                if (data.error) {
+                    updateGameStatus('错误: ' + data.error);
+                    myTurn = true;
+                    return;
+                }
+                if (data.board && Array.isArray(data.board) && data.board.length === BOARD_SIZE) {
+                    board = data.board;
+                }
+                if (data.gameOver) {
+                    gameOver = true;
+                    myTurn = false;
+                    drawBoard();
+                    if (data.finalScore) showResult(data.finalScore);
+                    return;
+                }
+                currentTurn = data.currentTurn;
+                drawBoard();
+                if (data.pass) {
+                    updateGameStatus('AI 无棋可下（Pass），轮到你了');
+                } else {
+                    const colLetter = String.fromCharCode(65 + (data.aiCol >= 8 && BOARD_SIZE===19 ? data.aiCol+1 : data.aiCol));
+                    updateGameStatus(`AI 落子 ${colLetter}${data.aiRow+1}，轮到你了`);
+                }
+                myTurn = true;
+            } catch (e) {
+                updateGameStatus('网络错误: ' + e.message);
+                myTurn = true;
+            }
+        }
+
+        async function resignGame() {
+            if (gameOver) return;
+            myTurn = false;
+            updateGameStatus('你认输了...');
+            try {
+                const resp = await fetch('/resign', { method: 'POST' });
+                if (!resp.ok) {
+                    updateGameStatus('服务器错误: ' + resp.status);
+                    myTurn = true;
+                    return;
+                }
+                const data = await resp.json();
+                if (data.error) {
+                    updateGameStatus('错误: ' + data.error);
+                    myTurn = true;
+                    return;
+                }
+                gameOver = true;
+                myTurn = false;
+                if (data.finalScore) showResult(data.finalScore);
+                drawBoard();
+            } catch (e) {
+                updateGameStatus('网络错误: ' + e.message);
+                myTurn = true;
+            }
+        }
+
+        async function endGame() {
+            if (gameOver) return;
+            try {
+                const resp = await fetch('/endgame', { method: 'POST' });
+                if (!resp.ok) {
+                    updateGameStatus('结束对局失败: ' + resp.status);
+                    return;
+                }
+                const data = await resp.json();
+                if (data.error) {
+                    updateGameStatus('错误: ' + data.error);
+                    return;
+                }
+                gameOver = true;
+                myTurn = false;
+                if (data.finalScore) showResult(data.finalScore);
+                drawBoard();
+            } catch (e) {
+                updateGameStatus('网络错误: ' + e.message);
+            }
+        }
+
+        async function resetGame() {
+            try {
+                const resp = await fetch('/reset', { method: 'POST' });
+                if (!resp.ok) {
+                    updateGameStatus('重置失败: ' + resp.status);
+                    return;
+                }
+                await fetchStatus();
+                updateGameStatus('棋盘已重置，轮到你了');
+            } catch (e) {
+                updateGameStatus('重置失败: ' + e.message);
+            }
+        }
+
+        function goBackToConfig() {
+            gamePanel.style.display = 'none';
+            configPanel.style.display = 'inline-block';
+            configStatus.textContent = '';
+            gameOver = false;
+            myTurn = false;
+            board = createEmptyBoard(BOARD_SIZE);
+            drawBoard();
+            updateGameStatus('已返回配置');
+        }
+
+        async function startGame() {
+            const size = parseInt(boardSizeSelect.value);
+            const diff = parseInt(difficultySelect.value);
+            BOARD_SIZE = size;
+            board = createEmptyBoard(size);
+            adjustCellSize();
+            resizeCanvas();
+            drawBoard();
+            configStatus.textContent = '正在连接服务器...';
+            try {
+                const resp = await fetch('/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ boardSize: size, difficulty: diff })
+                });
+                if (!resp.ok) {
+                    configStatus.textContent = '服务器响应错误: ' + resp.status;
+                    return;
+                }
+                const data = await resp.json();
+                if (data.status === 'ok') {
+                    configPanel.style.display = 'none';
+                    gamePanel.style.display = 'inline-block';
+                    await fetchStatus();
+                    updateGameStatus('游戏已开始，轮到你了');
+                } else {
+                    configStatus.textContent = '配置失败: ' + JSON.stringify(data);
+                }
+            } catch (e) {
+                configStatus.textContent = '连接服务器失败: ' + e.message;
+            }
+        }
+
+        // ---------- 事件绑定 ----------
+        startBtn.addEventListener('click', startGame);
+        resetBtn.addEventListener('click', resetGame);
+        passBtn.addEventListener('click', doPass);
+        resignBtn.addEventListener('click', resignGame);
+        endBtn.addEventListener('click', endGame);
+        backBtn.addEventListener('click', goBackToConfig);
+
+        canvas.addEventListener('click', function(e) {
+            if (gameOver || !myTurn) return;
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const mouseX = (e.clientX - rect.left) * scaleX;
+            const mouseY = (e.clientY - rect.top) * scaleY;
+            let col = Math.round((mouseX - PADDING) / CELL_SIZE);
+            let row = Math.round((mouseY - PADDING) / CELL_SIZE);
+            if (row < 0 || row >= BOARD_SIZE || col < 0 || col >= BOARD_SIZE) return;
+            sendMove(row, col);
+        });
+
+        // ---------- 窗口尺寸变化自适应 ----------
+        window.addEventListener('resize', function() {
+            if (gamePanel.style.display !== 'none') {
+                adjustCellSize();
+                resizeCanvas();
+                drawBoard();
+            }
+        });
+
+        // ---------- 初始化 ----------
+        BOARD_SIZE = 9;
+        board = createEmptyBoard(BOARD_SIZE);
+        adjustCellSize();
+        resizeCanvas();
+        drawBoard();
+        updateGameStatus('请配置对局参数并点击“开始对局”');
+
+        // 初始化时调用，确保默认状态正确
+        updateDifficultyOptions();
+
+        // 定时刷新状态
+        setInterval(() => {
+            if (gamePanel.style.display !== 'none') {
+                fetchStatus();
+            }
+        }, 3000);
+
+        // 页面完全加载后，若 configPanel 可见，也确保选项状态
+        window.addEventListener('DOMContentLoaded', function() {
+            updateDifficultyOptions();
+        });
+    </script>
+</body>
+</html>
