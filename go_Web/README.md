@@ -6,13 +6,13 @@
 
 ## ✨ 特性
 
-- 🎮 **双棋盘支持**：9×9 和 19×9 自由切换
+- 🎮 **双棋盘支持**：9×9 和 19×19 自由切换
 - 🤖 **五档 AI 难度**：
   - 极简（规则）
   - 简单（贪心）
   - 中等（2层搜索）
   - 困难（6层搜索）
-  - 困难（MCTS 搜索，仅 19×9）
+  - 困难（MCTS 搜索，仅 19×19）
 - 🖥️ **Web 可视化**：基于 HTML5 Canvas 的交互式棋盘，自适应窗口
 - 🧠 **神经网络推理**：MCTS 模式使用 ONNX Runtime 加载预训练模型（TinyGo）
 - 🌐 **前后端分离**：C++ 后端提供 RESTful API，前端独立渲染
@@ -155,4 +155,5 @@ python export_onnx.py
 - [nlohmann/json](https://github.com/nlohmann/json) – 现代 JSON 处理库
 - [ONNX Runtime](https://onnxruntime.ai/) – 跨平台推理引擎
 - [TinyGo](https://github.com/laochoupro/TinyGo) – 轻量级围棋神经网络参考实现
+- [deppseek](https://chat.deepseek.com/) - 编写主要代码
 
