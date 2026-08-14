@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>📋 迷你待办</title>
+<style>
+  :root { --accent:#3b7f5c; --bg:#f2f5f3; --card:#fff; --line:#e2e7e3;
+          --text:#232; --muted:#7a857d; --sel:#dff0e6; --danger:#c0392b; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; }
+  body { font:16px/1.5 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+         background:var(--bg); color:var(--text); -webkit-user-select:none; user-select:none; }
+  #app { max-width:560px; margin:0 auto; padding:10px 12px calc(86px + env(safe-area-inset-bottom)); }
+  h1 { font-size:17px; margin:4px 2px 10px; display:flex; align-items:center; justify-content:space-between; }
+  h1 small { font-size:12px; font-weight:normal; color:var(--muted); }
+
+  /* 输入卡片 */
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px; margin-bottom:10px; }
+  .descRow { display:flex; gap:8px; }
+  #desc { flex:1; min-width:0; padding:10px; border:1px solid var(--line); border-radius:10px;
+          font-size:16px; -webkit-user-select:text; user-select:text; }
+  #addBtn { min-width:64px; border:none; border-radius:10px; background:var(--accent); color:#fff; font-size:16px; }
+  .timeRow { display:flex; gap:5px; margin-top:8px; flex-wrap:wrap; }
+  .timeRow select { flex:1; min-width:44px; padding:9px 4px; border:1px solid var(--line);
+                    border-radius:10px; background:#fff; font-size:15px; text-align:center; }
+  .timeRow .sep { align-self:center; color:var(--muted); }
+
+  /* 过滤分段 */
+  .seg { display:flex; background:var(--card); border:1px solid var(--line); border-radius:10px;
+         overflow:hidden; margin-bottom:10px; }
+  .seg button { flex:1; padding:10px 0; border:none; background:transparent; font-size:14px; color:var(--muted); }
+  .seg button.on { background:var(--sel); color:var(--accent); font-weight:600; }
+
+  /* 列表 */
+  #list { list-style:none; margin:0; padding:0; }
+  #list li { display:flex; align-items:center; gap:8px; background:var(--card);
+             border:1px solid var(--line); border-radius:12px; padding:10px 12px; margin-bottom:8px;
+             transition:background .15s; }
+  #list li.sel { background:var(--sel); border-color:var(--accent); }
+  #list .cb { font-size:22px; line-height:1; color:var(--muted); }
+  #list li.done .cb { color:var(--accent); }
+  #list .body { flex:1; min-width:0; }
+  #list .desc { word-break:break-word; }
+  #list li.done .desc { color:var(--muted); text-decoration:line-through; }
+  #list .time { font-size:12px; color:var(--muted); }
+  #list .num { font-size:12px; color:var(--muted); }
+  #empty { text-align:center; color:var(--muted); padding:30px 0; }
+
+  /* 底部操作栏 */
+  #ops { position:fixed; left:0; right:0; bottom:0; background:var(--card);
+         border-top:1px solid var(--line); padding:8px 12px calc(8px + env(safe-area-inset-bottom));
+         display:flex; flex-wrap:wrap; gap:6px; justify-content:center; z-index:5; }
+  #ops button { flex:1; min-width:88px; min-height:44px; padding:6px 8px; border:1px solid var(--line);
+                border-radius:10px; background:#fff; font-size:13px; color:var(--text); }
+  #ops button:active { background:#eef3ef; }
+  #ops button.danger { color:var(--danger); }
+  #ops button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  #ops .wide { flex-basis:100%; }
+
+  /* Toast */
+  #toast { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(120px + env(safe-area-inset-bottom));
+           background:rgba(20,30,24,.92); color:#fff; padding:9px 18px; border-radius:20px;
+           font-size:14px; opacity:0; pointer-events:none; transition:opacity .25s; z-index:20; }
+  #toast.show { opacity:1; }
+
+  /* 编辑弹窗 */
+  #mask { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:30; }
+  #mask.show { display:flex; align-items:flex-end; }
+  #sheet { width:100%; background:#fff; border-radius:16px 16px 0 0; padding:16px 14px calc(16px + env(safe-area-inset-bottom)); }
+  #sheet h3 { margin:0 0 10px; font-size:16px; }
+  #sheet .row { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  #eDesc { flex-basis:100%; padding:10px; border:1px solid var(--line); border-radius:10px;
+           font-size:16px; -webkit-user-select:text; user-select:text; }
+  #sheet select { flex:1; min-width:44px; padding:9px 4px; border:1px solid var(--line); border-radius:10px;
+                  background:#fff; font-size:15px; text-align:center; }
+  #sheet .btns { display:flex; gap:8px; margin-top:12px; }
+  #sheet .btns button { flex:1; min-height:46px; border-radius:10px; font-size:16px; border:1px solid var(--line); background:#fff; }
+  #sheet .btns .primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>📋 迷你待办 <small id="sortBtn" style="color:var(--accent)">按优先级</small></h1>
+
+  <div class="card">
+    <div class="descRow">
+      <input type="text" id="desc" placeholder="输入任务，回车添加" autocomplete="off">
+      <button id="addBtn" class="primary">添加</button>
+    </div>
+    <div class="timeRow">
+      <select id="y"></select><select id="mo"></select><select id="d"></select>
+      <span class="sep">|</span>
+      <select id="h"></select><select id="mi"></select>
+    </div>
+  </div>
+
+  <div class="seg" id="seg">
+    <button data-f="all" class="on">全部</button>
+    <button data-f="open">未完成</button>
+    <button data-f="done">已完成</button>
+  </div>
+
+  <ul id="list"></ul>
+  <div id="empty" style="display:none">（暂无任务）</div>
+</div>
+
+<div id="ops">
+  <button id="markDone" class="primary">✓ 完成</button>
+  <button id="markUndone">↺ 未完成</button>
+  <button id="del" class="danger">✕ 删除</button>
+  <button id="up">▲ 上移</button>
+  <button id="down">▼ 下移</button>
+  <button id="selAll" class="wide">全选</button>
+</div>
+
+<div id="toast"></div>
+
+<div id="mask"><div id="sheet">
+  <h3>编辑任务</h3>
+  <input type="text" id="eDesc" placeholder="任务描述" autocomplete="off">
+  <div class="row">
+    <select id="ey"></select><select id="emo"></select><select id="ed"></select>
+    <select id="eh"></select><select id="emi"></select>
+  </div>
+  <div class="btns">
+    <button id="eCancel">取消</button>
+    <button id="eSave" class="primary">保存</button>
+  </div>
+</div></div>
+
+<script>
+"use strict";
+/* ===== 数据 ===== */
+var LS_KEY = "mini_todo_v1";
+var state = { todos: [], filter: "all", sort: "priority" };
+var sel = new Set();
+var editId = null;
+
+function load() {
+  try {
+    var raw = JSON.parse(localStorage.getItem(LS_KEY) || "null");
+    if (raw && Array.isArray(raw.todos)) { state.todos = raw.todos; if (raw.sort === "time") state.sort = "time"; }
+  } catch (e) { state.todos = []; }
+  migrate(); save();
+}
+function save() { try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {} }
+function migrate() {
+  if (state.todos.every(function (t) { return "time_order" in t; })) return;
+  var counter = {};
+  state.todos.forEach(function (t) {
+    var k = t.date + "|" + t.time;
+    t.time_order = counter[k] || 0; counter[k] = t.time_order + 1;
+  });
+}
+function nextId() { return state.todos.reduce(function (m, t) { return Math.max(m, t.id); }, 0) + 1; }
+function find(id) { for (var i = 0; i < state.todos.length; i++) if (state.todos[i].id === id) return state.todos[i]; return null; }
+function timeKey(t) { return (t.date || "") + "|" + (t.time || ""); }
+function timeStr(t) { var d = t.date || "", ti = t.time || ""; return (d && ti) ? d + " " + ti : d; }
+function groupMax(date, time, excludeId) {
+  var k = (date || "") + "|" + (time || ""), mx = -1;
+  state.todos.forEach(function (t) {
+    if (t.id !== excludeId && timeKey(t) === k) mx = Math.max(mx, t.time_order || 0);
+  });
+  return mx;
+}
+
+/* ===== 时间下拉 ===== */
+function fillSelects() {
+  var y0 = new Date().getFullYear();
+  var ys = [""], ms = [""], ds = [""], hs = [""], mis = [""];
+  for (var y = y0 - 4; y <= y0 + 6; y++) ys.push(y);
+  for (var m = 1; m <= 12; m++) ms.push(m);
+  for (var d = 1; d <= 31; d++) ds.push(d);
+  for (var h = 0; h < 24; h++) hs.push(h);
+  for (var mi = 0; mi < 60; mi++) mis.push(mi);
+  [["y", ys], ["mo", ms], ["d", ds], ["h", hs], ["mi", mis],
+   ["ey", ys], ["emo", ms], ["ed", ds], ["eh", hs], ["emi", mis]
+  ].forEach(function (p) {
+    var el = document.getElementById(p[0]);
+    p[1].forEach(function (v) {
+      var o = document.createElement("option");
+      o.value = v; o.textContent = v === "" ? "—" : v; el.appendChild(o);
+    });
+  });
+  // 回车流转 + 焦点全选（手机延时处理）
+  var chain = ["y", "mo", "d", "h", "mi", "desc"].map(function (id) { return document.getElementById(id); });
+  chain.forEach(function (el, i) {
+    el.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); if (i + 1 < chain.length) chain[i + 1].focus(); else addTask(); }
+      else if (e.key === "Tab") { e.preventDefault(); chain[(i + 1) % chain.length].focus(); }
+    });
+    el.addEventListener("focus", function () { setTimeout(function () { try { el.select(); } catch (e) {} }, 0); });
+  });
+}
+
+/* ===== 校验（与桌面版一致） ===== */
+function validateTime(y, mo, d, h, mi) {
+  y = String(y || "").trim(); mo = String(mo || "").trim(); d = String(d || "").trim();
+  h = String(h || "").trim(); mi = String(mi || "").trim();
+  if (!h && !mi) return { date: "", time: "", err: "" };
+  if (!h || !mi) return { date: "", time: "", err: "时刻必须同时填写时和分" };
+  if (!(y && mo && d)) return { date: "", time: "", err: "日期必须完整" };
+  var dt = new Date(+y, +mo - 1, +d);
+  if (dt.getFullYear() !== +y || dt.getMonth() !== +mo - 1 || dt.getDate() !== +d)
+    return { date: "", time: "", err: "日期无效，请检查所选日期" };
+  var pad = function (n) { return (n < 10 ? "0" : "") + n; };
+  return { date: y + "-" + pad(mo) + "-" + pad(d), time: pad(h) + ":" + pad(mi), err: "" };
+}
+
+/* ===== 排序 ===== */
+function displayOrder(list) {
+  if (state.sort === "priority") return list.slice();
+  return list.slice().sort(function (a, b) {
+    var ah = !!(a.date && a.time), bh = !!(b.date && b.time);
+    if (ah !== bh) return ah ? 1 : -1;
+    if (ah) {
+      if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+      if (a.time !== b.time) return a.time < b.time ? -1 : 1;
+    }
+    return (a.time_order || 0) - (b.time_order || 0);
+  });
+}
+function filtered() {
+  return displayOrder(state.todos.filter(function (t) {
+    return state.filter === "all" ? true : (state.filter === "done" ? t.done : !t.done);
+  }));
+}
+
+/* ===== 渲染 ===== */
+function esc(s) { return String(s).replace(/[&<>"']/g, function (c) {
+  return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+function render() {
+  var list = document.getElementById("list");
+  list.innerHTML = "";
+  var items = filtered();
+  items.forEach(function (t, i) {
+    var li = document.createElement("li");
+    li.dataset.id = t.id;
+    if (sel.has(t.id)) li.className = "sel";
+    if (t.done) li.className += " done";
+    li.innerHTML = "<span class='cb'>" + (t.done ? "☑" : "☐") + "</span>" +
+      "<div class='body'><div class='desc'>" + esc(t.description) + "</div>" +
+      (timeStr(t) ? "<div class='time'>" + esc(timeStr(t)) + "</div>" : "") + "</div>" +
+      "<span class='num'>#" + (i + 1) + "</span>";
+    list.appendChild(li);
+  });
+  document.getElementById("empty").style.display = items.length ? "none" : "block";
+  document.getElementById("sortBtn").textContent = state.sort === "time" ? "按时间" : "按优先级";
+  var allSel = items.length > 0 && items.every(function (t) { return sel.has(t.id); });
+  document.getElementById("selAll").textContent = allSel ? "取消全选" : "全选";
+}
+
+/* ===== 长按编辑 + 单击交互 ===== */
+var longTimer = null, longFired = false, touchId = null, suppressClick = false;
+var listEl = document.getElementById("list");
+
+function clearLong() { if (longTimer) { clearTimeout(longTimer); longTimer = null; } }
+function fireLong(li) { longFired = true; openEdit(+li.dataset.id); }
+listEl.addEventListener("touchstart", function (e) {
+  var li = e.target.closest("li"); if (!li) return;
+  clearLong(); longFired = false; touchId = e.changedTouches[0].identifier;
+  longTimer = setTimeout(function () { fireLong(li); longTimer = null; }, 500);
+}, { passive: true });
+listEl.addEventListener("touchmove", clearLong, { passive: true });
+listEl.addEventListener("touchend", function (e) {
+  clearLong();
+  if (longFired) return;   // 长按已触发编辑，忽略本次结束，避免误切完成
+  var touch = Array.prototype.find.call(e.changedTouches, function (t) { return t.identifier === touchId; });
+  if (touch) {
+    var el = document.elementFromPoint(touch.clientX, touch.clientY);
+    if (!el) return;
+    var li = el.closest("li");
+    var cb = el.closest(".cb");
+    if (li && cb) {
+      suppressClick = true;   // 复选框仅切完成，不改选区
+      toggleDone(li);
+    }
+  }
+});
+listEl.addEventListener("click", function (e) {
+  if (longFired) { longFired = false; return; }   // 长按后阻止选中
+  if (suppressClick) { suppressClick = false; return; }  // 复选框点击后阻止选区变化
+  var li = e.target.closest("li");
+  if (!li) { setSel([]); return; }                 // 空白清空
+  toggleSel(+li.dataset.id);
+});
+listEl.addEventListener("dblclick", function (e) {  // 桌面兼容
+  var li = e.target.closest("li"); if (li) openEdit(+li.dataset.id);
+});
+document.addEventListener("touchstart", function (e) {  // 点击列表外空白清空
+  if (!e.target.closest("#list") && !e.target.closest("#ops") && !e.target.closest("#mask") &&
+      !e.target.closest("#seg") && !e.target.closest(".card")) {
+    if (sel.size) setSel([]);
+  }
+}, { passive: true });
+
+function toggleSel(id) { sel.has(id) ? sel.delete(id) : sel.add(id); render(); }
+function setSel(ids) { sel = new Set(ids); render(); }
+function toggleDone(li) {
+  var t = find(+li.dataset.id);
+  if (!t) return;
+  t.done = !t.done; save(); render(); toast(t.done ? "已标记完成" : "已取消完成");
+}
+
+/* ===== 添加 ===== */
+document.getElementById("addBtn").addEventListener("click", addTask);
+function addTask() {
+  var desc = document.getElementById("desc").value.trim();
+  if (!desc) { toast("任务描述不能为空"); return; }
+  var r = validateTime(document.getElementById("y").value, document.getElementById("mo").value,
+                       document.getElementById("d").value, document.getElementById("h").value,
+                       document.getElementById("mi").value);
+  if (r.err) { toast(r.err); return; }
+  state.todos.push({ id: nextId(), description: desc, done: false, date: r.date, time: r.time,
+                     time_order: groupMax(r.date, r.time) + 1 });
+  document.getElementById("desc").value = "";
+  document.getElementById("h").value = ""; document.getElementById("mi").value = "";
+  save(); render(); toast("任务已添加");
+}
+
+/* ===== 批量操作 ===== */
+function mark(flag) {
+  var ids = Array.from(sel);
+  if (!ids.length) { toast("请先选择任务"); return; }
+  var changed = 0;
+  ids.forEach(function (id) { var t = find(id); if (t && t.done !== flag) { t.done = flag; changed++; } });
+  save(); render();
+  toast(changed ? (flag ? "已标记 " + changed + " 个完成" : "已取消 " + changed + " 个") : "所选任务无需操作");
+}
+document.getElementById("markDone").addEventListener("click", function () { mark(true); });
+document.getElementById("markUndone").addEventListener("click", function () { mark(false); });
+
+document.getElementById("del").addEventListener("click", function () {
+  var ids = Array.from(sel);
+  if (!ids.length) { toast("请先选择任务"); return; }
+  if (!confirm("删除选中的 " + ids.length + " 个任务？不可撤销！")) return;
+  state.todos = state.todos.filter(function (t) { return ids.indexOf(t.id) < 0; });
+  sel = new Set(ids.filter(function (id) { return find(id); }));
+  save(); render(); toast("已删除 " + ids.length + " 个任务");
+});
+
+document.getElementById("selAll").addEventListener("click", function () {
+  var items = filtered();
+  var all = items.length > 0 && items.every(function (t) { return sel.has(t.id); });
+  setSel(all ? [] : items.map(function (t) { return t.id; }));
+});
+
+/* ===== 移动 ===== */
+function move(up) {
+  var ids = Array.from(sel);
+  if (!ids.length) { toast("请先选择任务"); return; }
+  if (state.sort === "time") {
+    if (!moveTimeOrder(ids, up)) return;
+    toast("已调整相同时间任务顺序");
+  } else {
+    var pos = {}; state.todos.forEach(function (t, i) { pos[t.id] = i; });
+    var n = state.todos.length;
+    if (up) {
+      if (ids.some(function (id) { return pos[id] === 0; })) { toast("部分任务无法移动，操作取消"); return; }
+      for (var i = 0; i < n; i++) if (ids.indexOf(state.todos[i].id) >= 0) {
+        var tmp = state.todos[i - 1]; state.todos[i - 1] = state.todos[i]; state.todos[i] = tmp;
+      }
+    } else {
+      if (ids.some(function (id) { return pos[id] === n - 1; })) { toast("部分任务无法移动，操作取消"); return; }
+      for (var i = n - 1; i >= 0; i--) if (ids.indexOf(state.todos[i].id) >= 0) {
+        var tmp = state.todos[i + 1]; state.todos[i + 1] = state.todos[i]; state.todos[i] = tmp;
+      }
+    }
+    save(); render(); setSel(ids); toast("已" + (up ? "上移" : "下移") + " " + ids.length + " 个任务");
+  }
+}
+function moveTimeOrder(ids, up) {
+  var keys = {};
+  ids.forEach(function (id) { keys[timeKey(find(id))] = true; });
+  if (Object.keys(keys).length > 1) { toast("仅允许调整相同时间任务的顺序"); return false; }
+  var key = Object.keys(keys)[0];
+  var group = state.todos.filter(function (t) { return timeKey(t) === key; })
+                         .sort(function (a, b) { return (a.time_order || 0) - (b.time_order || 0); });
+  var seq = group.map(function (t) { return t.id; }), n = seq.length;
+  var idx = {}; seq.forEach(function (id, i) { idx[id] = i; });
+  if (up && ids.some(function (id) { return idx[id] === 0; })) { toast("无法移动：任务已在相同时间组的最上方"); return false; }
+  if (!up && ids.some(function (id) { return idx[id] === n - 1; })) { toast("无法移动：任务已在相同时间组的最下方"); return false; }
+  var byId = {}; group.forEach(function (t) { byId[t.id] = t; });
+  var i, a, b, tmp;
+  if (up) {
+    for (i = 0; i < n; i++) if (ids.indexOf(seq[i]) >= 0) {
+      a = byId[seq[i]]; b = byId[seq[i - 1]]; tmp = a.time_order; a.time_order = b.time_order; b.time_order = tmp;
+    }
+  } else {
+    for (i = n - 1; i >= 0; i--) if (ids.indexOf(seq[i]) >= 0) {
+      a = byId[seq[i]]; b = byId[seq[i + 1]]; tmp = a.time_order; a.time_order = b.time_order; b.time_order = tmp;
+    }
+  }
+  save(); render(); setSel(ids); return true;
+}
+document.getElementById("up").addEventListener("click", function () { move(true); });
+document.getElementById("down").addEventListener("click", function () { move(false); });
+
+/* ===== 过滤 / 排序 ===== */
+document.getElementById("seg").addEventListener("click", function (e) {
+  var b = e.target.closest("button"); if (!b) return;
+  state.filter = b.dataset.f;
+  document.querySelectorAll("#seg button").forEach(function (x) { x.classList.toggle("on", x === b); });
+  render();
+});
+document.getElementById("sortBtn").addEventListener("click", function () {
+  state.sort = state.sort === "time" ? "priority" : "time";
+  save(); render();
+});
+
+/* ===== 编辑弹窗 ===== */
+function openEdit(id) {
+  var t = find(id); if (!t) return;
+  editId = id;
+  document.getElementById("eDesc").value = t.description;
+  var p = (t.date || "").split("-");
+  setVal("ey", p[0] || ""); setVal("emo", p[1] || ""); setVal("ed", p[2] || "");
+  p = (t.time || "").split(":");
+  setVal("eh", p[0] || ""); setVal("emi", p[1] || "");
+  document.getElementById("mask").classList.add("show");
+  document.getElementById("eDesc").focus(); document.getElementById("eDesc").select();
+}
+function setVal(id, v) {
+  var el = document.getElementById(id);
+  if (el.querySelector("option[value='" + v + "']")) el.value = v;
+}
+function closeEdit() { editId = null; document.getElementById("mask").classList.remove("show"); }
+document.getElementById("eCancel").addEventListener("click", closeEdit);
+document.getElementById("eSave").addEventListener("click", function () {
+  if (editId == null) return;
+  var t = find(editId), desc = document.getElementById("eDesc").value.trim();
+  if (!desc) { toast("任务描述不能为空"); return; }
+  var r = validateTime(document.getElementById("ey").value, document.getElementById("emo").value,
+                       document.getElementById("ed").value, document.getElementById("eh").value,
+                       document.getElementById("emi").value);
+  if (r.err) { toast(r.err); return; }
+  t.description = desc;
+  var changed = t.date !== r.date || t.time !== r.time;
+  t.date = r.date; t.time = r.time;
+  if (changed) t.time_order = groupMax(r.date, r.time, editId) + 1;
+  save(); render(); setSel([editId]); toast("任务已更新"); closeEdit();
+});
+document.getElementById("eDesc").addEventListener("keydown", function (e) {
+  if (e.key === "Enter") document.getElementById("eSave").click();
+});
+
+/* ===== Toast ===== */
+var toastTimer = null;
+function toast(msg) {
+  var el = document.getElementById("toast");
+  el.textContent = msg; el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { el.classList.remove("show"); }, 2200);
+}
+
+/* ===== 启动 ===== */
+fillSelects();
+load();
+render();
+</script>
+</body>
+</html>
