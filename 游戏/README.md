@@ -22,8 +22,10 @@
 
 如你是某项目的版权所有者或授权代表，认为本仓库中的内容侵犯了你的权利，或不同意我公开存放、分发相关内容，请通过 GitHub Issue 联系我。我会在确认后尽快删除相关内容或调整仓库可见性。
 
-## 5. 个人用途说明
+## 5.附相关内容
 
-本人将这些内容放在公开仓库，仅是为了个人在外出游玩时方便访问和获取，不用于商业销售，也不代表原作者认可本仓库。
-
-本声明不构成法律意见；具体权利与义务以各原项目许可证为准。
+| 文件/项目名 | 原作者/组织 | 原仓库链接 | 许可证 |
+| :--- | :--- | :--- | :--- |
+| 青竹剑阵.html | jindx1020-crypto / bilibili@卡布奇诺ultra | [qingzhu-sword-array](https://github.com/jindx1020-crypto/qingzhu-sword-array) | GPL-3.0-only |
+| OGame-Vue-Ts-server-win.exe<br>OGame-Vue-Ts-arm64-v8a.apk | setube | [ogame-vue-ts](https://github.com/setube/ogame-vue-ts) | CC BY-NC 4.0 |
+| 起源.html<br>origin-16bit-arpg-main.zip | DFarm6 | [origin-16bit-arpg](https://github.com/DFarm6/origin-16bit-arpg) | MIT |
